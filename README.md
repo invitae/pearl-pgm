@@ -1,1 +1,1 @@
-# invitae-pearl-public
+# pearl-pgm
