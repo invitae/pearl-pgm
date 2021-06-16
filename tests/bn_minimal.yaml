@@ -1,0 +1,32 @@
+encodingVersion: v1.0
+name: bn
+device:
+  type: cpu
+  index: 0
+plates: {}
+nodes:
+  a:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['yes', 'no']
+    num_categories: 2
+    parents: []
+    plates: []
+  b:
+    type: ContinuousNodeWithNormalDistribution
+    parents: ['a']
+    plates: []
+  c:
+    type: Exponential
+    parents: ['b']
+    plates: []
+    observed: false
+  d:
+    type: ContinuousNodeWithNormalDistribution
+    parents: []
+    plates: []
+    observed: true
+  e:
+    type: Sum
+    parents: ['c', 'd']
+    plates: []
+    observed: false

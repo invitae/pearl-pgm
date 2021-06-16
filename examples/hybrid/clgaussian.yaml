@@ -1,0 +1,43 @@
+device:
+  index: 0
+  type: cpu
+encodingVersion: v1.0
+name: clgaussian
+plates: {}
+nodes:
+  A:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['a', 'b']
+    parents: []
+    plates: []
+  B:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['a', 'b', 'c']
+    parents: []
+    plates: []
+  C:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['a', 'b', 'c', 'd']
+    parents: []
+    plates: []
+  H:
+    type: ContinuousNodeWithNormalDistribution
+    parents: []
+    plates: []
+  D:
+    type: ConditionalLinearGaussianNode
+    parents: ['A', 'H']
+    plates: []
+  E:
+    type: ConditionalLinearGaussianNode
+    parents: ['B', 'D']
+    plates: []
+  F:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['a', 'b']
+    parents: ['B', 'C']
+    plates: []
+  G:
+    type: ConditionalLinearGaussianNode
+    parents: ['A', 'D', 'E', 'F']
+    plates: []

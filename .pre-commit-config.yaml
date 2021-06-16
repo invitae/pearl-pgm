@@ -1,0 +1,40 @@
+repos:
+  - repo: https://github.com/timothycrosley/isort
+    rev: 5.7.0
+    hooks:
+      - id: isort
+        args: [-m, '3', --trailing-comma, -l, '88']
+  - repo: https://github.com/ambv/black
+    rev: 20.8b1
+    hooks:
+      - id: black # perform automatic code reformatting
+        language_version: python3 # more permissive of python 3.6 or 3.7
+  - repo: https://gitlab.com/pycqa/flake8
+    rev: 3.8.4
+    hooks:
+      - id: flake8
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v3.4.0
+    hooks:
+      - id: check-merge-conflict # garbage in...
+      # - id: flake8 # FTW - config from ..flake8 ini file
+      - id: name-tests-test # ensures all files end with '_test'
+      - id: check-json # parses json -- maybe we should pretty print?
+      - id: debug-statements # don't be that guy
+      - id: no-commit-to-branch # don't allow committing to master
+        args: [--branch, master, --branch, release, --branch, main] # prevent committing to master, release or main
+      - id: trailing-whitespace # transform this
+      - id: end-of-file-fixer # adds newline at end of files
+      - id: check-byte-order-marker # reads 3 bytes from each staged file ensuring that it doesn't have b'\xef\xbb\xbf'
+      - id: check-added-large-files # ensures a large file hasn't been committed
+      - id: detect-private-key # keep those keys safe
+      - id: check-symlinks # check for broken symlinks
+  - repo: https://github.com/pre-commit/mirrors-prettier #prettier webhook for standardizing Javascript
+    rev: 'v2.2.1'
+    hooks:
+      - id: prettier
+        args: [--single-quote]
+  - repo: https://github.com/milin/giticket
+    rev: 'v1.1'
+    hooks:
+      - id: giticket
