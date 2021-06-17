@@ -1,0 +1,59 @@
+[tool.poetry]
+name = "pearl-pgm"
+version = "0.1.0"
+description = "Library for declarative specification of directed graphical models and inference using Pyro."
+authors = [
+    "Arun Nampally <arun.nampally@invitae.com>",
+    "Emil Keyder <emil.keyder@invitae.com>",
+    "Eugene Palovcak <eugene.palovcak@invitae.com>",
+    "Garrett Bernstein <garrett.bernstein@invitae.com>",
+    "Luc Cary <luc.cary@invitae.com>",
+    "Timothy Laurent <timothy.laurent@invitae.com>",
+]
+license = "Apache-2.0"
+packages = [
+    { include = "pearl"},
+]
+readme = "README.md"
+homepage = ""
+repository = "https://github.com/invitae/pearl-pgm"
+documentation = ""
+keywords = [
+    "Graphical Models",
+    "Probabilistic Programming",
+    "Pyro",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[tool.poetry.dependencies]
+python = "^3.7.1"
+torch = "^1.6.0"
+pyro-ppl = "^1.4.0"
+networkx = "^2.4"
+PyYAML = "^5.4.1"
+numpy = "^1.20.3"
+h5py = "^3.2.1"
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.2.4"
+pytest-cov = "^2.12.1"
+pytest-mock = "^3.6.1"
+pre-commit = "^2.13.0"
+pandas = "^1.2.4"
+jupyter = "^1.0.0"
+graphviz = "^0.16"
+scikit-learn = "^0.24.2"
+matplotlib = "^3.4.2"
+pydot = "^1.4.2"
+ipython = "^7.24.1"
+
+[build-system]
+requires = ["poetry-core>=1.0.0",]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+junit_family = "xunit2"
+addopts = '--junitxml=reports/junit/pytests.xml --cov=pearl --cov-report term-missing --cov-report xml:reports/coverage/coverage.xml'

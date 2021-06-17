@@ -1,0 +1,59 @@
+encodingVersion: v1.0
+name: bn
+device:
+  type: cpu
+  index: 0
+plates: {}
+nodes:
+  a:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['yes', 'no']
+    num_categories: 2
+    parents: []
+    plates: []
+    alpha_min: 0.9
+    alpha_max: 200
+    num_tboard_samples: 1000
+    observed: true
+    prior_params:
+      alpha:
+        - 1.0
+        - 1.0
+  b:
+    type: ContinuousNodeWithNormalDistribution
+    parents: ['a']
+    plates: []
+    num_tboard_samples: 1000
+    observed: true
+    prior_params:
+      mean_mean:
+        - 0.0
+        - 0.0
+      mean_scale:
+        - 1.0
+        - 1.0
+      scale_scale:
+        - 1.0
+        - 1.0
+  c:
+    type: Exponential
+    parents: ['b']
+    plates: []
+    num_tboard_samples: 1000
+    observed: false
+  d:
+    type: ContinuousNodeWithNormalDistribution
+    parents: []
+    plates: []
+    num_tboard_samples: 1000
+    observed: true
+    prior_params:
+      mean_mean: 0.0
+      mean_scale: 1.0
+      scale_scale: 1.0
+  e:
+    type: Sum
+    parents: ['c', 'd']
+    plates: []
+    num_tboard_samples: 1000
+    observed: false

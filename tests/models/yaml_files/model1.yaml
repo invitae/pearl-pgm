@@ -1,0 +1,29 @@
+encodingVersion: v1.0
+name: model1
+device:
+  type: cpu
+  index: 0
+plates: {}
+nodes:
+  a:
+    type: CategoricalNodeWithContinuousParents
+    domain: ['low', 'high']
+    parents: []
+    plates: []
+  b:
+    type: NormalNodeWithContinuousParents
+    parents: []
+    plates: []
+  c:
+    type: ContinuousNodeWithNormalDistribution
+    parents: ['a']
+    plates: []
+  d:
+    type: NormalNodeWithContinuousParents
+    parents: ['c', 'b']
+    plates: []
+  e:
+    type: CategoricalNodeWithContinuousParents
+    domain: ['yes', 'no']
+    parents: ['c', 'd']
+    plates: []

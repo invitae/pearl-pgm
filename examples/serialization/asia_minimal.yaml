@@ -1,0 +1,47 @@
+device:
+  index: 0
+  type: cpu
+encodingVersion: v1.0
+name: asia
+plates: {}
+nodes:
+  asia:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['yes', 'no']
+    parents: []
+    plates: []
+  smoke:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['yes', 'no']
+    parents: []
+    plates: []
+  tub:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['yes', 'no']
+    parents: ['asia']
+    plates: []
+  lung:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['yes', 'no']
+    parents: ['smoke']
+    plates: []
+  either:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['yes', 'no']
+    parents: ['lung', 'tub']
+    plates: []
+  bronc:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['yes', 'no']
+    parents: ['smoke']
+    plates: []
+  xray:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['yes', 'no']
+    parents: ['either']
+    plates: []
+  dysp:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['yes', 'no']
+    parents: ['bronc', 'either']
+    plates: []

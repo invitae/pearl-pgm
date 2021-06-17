@@ -1,0 +1,30 @@
+device:
+  index: 0
+  type: cpu
+encodingVersion: v1.0
+name: glmodel
+plates: {}
+nodes:
+  A:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['a', 'b']
+    parents: []
+    plates: []
+  B:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['a', 'b']
+    parents: []
+    plates: []
+  C:
+    type: ContinuousNodeWithNormalDistribution
+    parents: []
+    plates: []
+  D:
+    type: ContinuousNodeWithNormalDistribution
+    parents: []
+    plates: []
+  E:
+    type: GeneralizedLinearNode
+    domain: ['a', 'b']
+    parents: ['A', 'B', 'C', 'D']
+    plates: []
