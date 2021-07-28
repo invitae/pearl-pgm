@@ -6,10 +6,11 @@ import yaml
 from pyro import poutine
 
 from pearl.bayesnet import BayesianNetwork, VariableData
-from pearl.common import NodeValueType
+from pearl.common import NodeValueType, same_device
 from pearl.data import BayesianNetworkDataset
 from pearl.nodes.categorical import CategoricalNodeWithDirichletPrior
 from pearl.nodes.continuous import ContinuousNodeWithNormalDistribution
+from tests.markers import needs_cuda
 
 # test Bayesian network
 #          +-----+
@@ -433,3 +434,47 @@ def test_bayesnet_validation_fails_out_of_domain_values(mock_bn, mock_plate_data
 
     with pytest.raises(ValueError):
         mock_bn.validate(mock_plate_dataset)
+
+
+@needs_cuda
+def test_device_change_support(mock_bn):
+    copy_to_device = torch.device("cuda", 0)
+
+    cuda_mock_bn = mock_bn.to(copy_to_device)
+    assert same_device(cuda_mock_bn.device, copy_to_device)
+    for node_object in cuda_mock_bn.get_node_dict().values():
+        assert same_device(node_object.device, copy_to_device)
+
+    cpu_mock_bn = cuda_mock_bn.to(mock_bn.device)
+    assert same_device(cpu_mock_bn.device, mock_bn.device)
+    for node_object in cpu_mock_bn.get_node_dict().values():
+        assert same_device(node_object.device, mock_bn.device)
+
+@needs_cuda
+def test_cpu_cuda(mock_bn):
+    CPU = torch.device('cpu', 0)
+    CUDA = torch.device('cuda', 0)
+
+    # cpu -> cpu copy
+    cpu_mock_bn = mock_bn.cpu()
+    assert same_device(cpu_mock_bn.device, CPU)
+    for node_object in cpu_mock_bn.get_node_dict().values():
+        assert same_device(node_object.device, CPU)
+
+    # cpu -> cuda copy
+    cuda_mock_bn = mock_bn.cuda(CUDA)
+    assert same_device(cuda_mock_bn.device, CUDA)
+    for node_object in cuda_mock_bn.get_node_dict().values():
+        assert same_device(node_object.device, CUDA)
+
+    # cuda -> cuda copy
+    another_cuda_mock_bn = cuda_mock_bn.cuda(CUDA)
+    assert same_device(another_cuda_mock_bn.device, CUDA)
+    for node_object in another_cuda_mock_bn.get_node_dict().values():
+        assert same_device(node_object.device, CUDA)
+
+    # cuda -> cpu copy
+    another_cpu_mock_bn = cuda_mock_bn.cpu()
+    assert same_device(another_cpu_mock_bn.device, CPU)
+    for node_object in another_cpu_mock_bn.get_node_dict().values():
+        assert same_device(node_object.device, CPU)

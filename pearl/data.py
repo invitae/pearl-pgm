@@ -305,37 +305,48 @@ class BayesianNetworkDataset(Dataset):
                 return False
         return True
 
-    def _copy_to_device(self, device: torch.device = None) -> None:
+    def to(self, device: torch.device) -> "BayesianNetworkDataset":
         """
-        Return a copy of the object with tensors copied to the
-        specified device.  If the device is None, the tensors are
-        copied to CPU memory, otherwise they are copied to the
-        specified CUDA device.
-        """
-        variable_dict = dict()
-        for k, v in self.variable_dict.items():
-            value_copy = v.value.cpu() if device is None else v.cuda(device)
-            variable_dict[k] = VariableData(
-                v.value_type,
-                value_copy,
-                v.discrete_domain,
-            )
-        return BayesianNetworkDataset(
-            variable_dict,
-        )
+        Return a copy of the ``BayesianNetworkDataset`` object with
+        tensors copied to the specified device.  If the object is
+        already using the specified device a shallow copy is returned.
 
-    def cuda(self, device: torch.device) -> "BayesianNetworkDataset":
+        :param device: torch device to be used for the tensors of the
+            copied ``BayesianNetworkDataset`` object.
         """
-        Return a copy of the dataset with tensors using the specified
-        cuda 'device'.  If the dataset tensors are already on the
-        specified device, return a shallow copy.
-        """
-        return self._copy_to_device(device)
+        if same_device(self.device, device):
+            return self.copy()
+        else:
+            variable_dict = dict()
+            for k, v in self.variable_dict.items():
+                value_copy = v.value.to(device)
+                variable_dict[k] = VariableData(
+                    v.value_type,
+                    value_copy,
+                    v.discrete_domain,
+                )
+            return BayesianNetworkDataset(
+                variable_dict,
+            )
 
     def cpu(self) -> "BayesianNetworkDataset":
         """
-        Return a copy of the dataset with tensor stored in CPU memory.
-        If the dataset tensors are already in CPU memory, this returns
-        a shallow copy.
+        Return a copy of the ``BayesianNetworkDataset`` object with
+        tensors copied to CPU memory.  If the object is already using
+        CPU memory a shallow copy is returned.
         """
-        return self._copy_to_device()
+        return self.to(torch.device("cpu", 0))
+
+    def cuda(self, device: torch.device) -> "BayesianNetworkDataset":
+        """
+        Return a copy of the ``BayesianNetworkDataset`` object with
+        tensors copied to the specified CUDA device.  If the object is
+        already using the specified device a shallow copy is returned.
+
+        :param device: torch cuda device to be used to store the
+            tensors of the copied ``BayesianNetworkDataset`` object.
+        """
+
+        if not device.type == 'cuda':
+            raise ValueError(f"did not receive cuda device as input: {device}")
+        return self.to(device)

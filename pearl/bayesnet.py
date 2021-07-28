@@ -1,3 +1,4 @@
+import copy
 import functools
 import logging
 import time
@@ -11,7 +12,7 @@ import torch
 import yaml
 from pyro.infer import SVI, Trace_ELBO, config_enumerate, infer_discrete
 
-from pearl.common import NodeValueType, Plate, SamplingMode, get_logger
+from pearl.common import NodeValueType, Plate, SamplingMode, get_logger, same_device
 from pearl.data import BayesianNetworkDataset, VariableData
 from pearl.hugin import hugin_potential_string
 from pearl.nodes.bayesnetnode import Node
@@ -600,7 +601,7 @@ class BayesianNetwork:
             yaml_encoding["device"]["type"], yaml_encoding["device"]["index"]
         )
         model = cls(yaml_encoding["name"], device=device)
-        for p, d in yaml_encoding["plates"]:
+        for p, d in yaml_encoding["plates"].items():
             model.add_plate(p, d)
 
         template_dag = nx.DiGraph()
@@ -633,6 +634,42 @@ class BayesianNetwork:
                     plate_sizes[plate.name] = size
         return plate_sizes
 
+    def to(self, device: torch.device) -> "BayesianNetwork":
+        """
+        Create a copy of the ``BayesianNetwork`` object with tensors
+        copied to the specified device.  Return a shallow copy if the
+        object is already using the specified device.
+
+        :param device: torch device to be used for the tensors of the
+            copied ``BayesianNetwork`` object.
+        """
+        if same_device(self.device, device):
+            return copy.copy(self)
+        else:
+            yaml_encoding = self.to_yaml_encoding()
+            yaml_encoding["device"] = {"type": device.type, "index": device.index}
+            return BayesianNetwork.from_yaml_encoding(yaml_encoding)
+
+    def cpu(self) -> "BayesianNetwork":
+        """
+        Return a copy of the ``BayesianNetwork`` object with tensors
+        copied to CPU memory.  If the object is already using CPU
+        memory a shallow copy is returned.
+        """
+        return self.to(torch.device('cpu', 0))
+
+    def cuda(self, device: torch.device) -> "BayesianNetwork":
+        """
+        Return a copy of the ``BayesianNetwork`` object with tensors
+        copied to the specified CUDA device.  If the object is already
+        using the specified device a shallow copy is returned.
+
+        :param device: torch cuda device to be used to store the
+            tensors of the copied ``BayesianNetwork`` object.
+        """
+        if not device.type == 'cuda':
+            raise ValueError(f"did not receive cuda device as input: {device}")
+        return self.to(device)
 
 def to_yaml(bn: BayesianNetwork, file: str) -> None:
     with open(file, "w") as fp:

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pearl-pgm"
-version = "0.1.0"
+version = "0.1.1"
 description = "Library for declarative specification of directed graphical models and inference using Pyro."
 authors = [
     "Arun Nampally <arun.nampally@invitae.com>",

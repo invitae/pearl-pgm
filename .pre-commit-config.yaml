@@ -19,6 +19,7 @@ repos:
       - id: check-merge-conflict # garbage in...
       # - id: flake8 # FTW - config from ..flake8 ini file
       - id: name-tests-test # ensures all files end with '_test'
+        exclude: tests/markers.py
       - id: check-json # parses json -- maybe we should pretty print?
       - id: debug-statements # don't be that guy
       - id: no-commit-to-branch # don't allow committing to master

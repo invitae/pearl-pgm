@@ -6,6 +6,7 @@ import torch
 
 from pearl.common import NodeValueType, same_device
 from pearl.data import BayesianNetworkDataset, VariableData
+from tests.markers import needs_cuda
 
 
 @contextmanager
@@ -274,18 +275,41 @@ def test_hdf5_roundtrip_with_file_objects(tmp_path, mock_dataset):
     assert dataset == loaded_dataset
 
 
-def test_to_cuda_to_cpu(mock_dataset):
-    if torch.cuda.is_available():
-        dataset = mock_dataset()
+@needs_cuda
+def test_device_change_support(mock_dataset):
+    dataset = mock_dataset()
 
-        cuda_dataset = dataset.cuda(torch.device("cuda", 0))
-        assert same_device(cuda_dataset.device, torch.device("cuda", 0))
-        for k in cuda_dataset.variable_dict:
-            assert same_device(cuda_dataset[k].device, torch.device("cuda", 0))
+    copy_to_device = torch.device("cuda", 0)
+    cuda_dataset = dataset.to(copy_to_device)
+    assert same_device(cuda_dataset.device, copy_to_device)
+    for k in cuda_dataset.variable_dict:
+        assert same_device(cuda_dataset[k].device, copy_to_device)
 
-        cpu_dataset = cuda_dataset.cpu()
-        assert same_device(dataset, cpu_dataset)
-        for k in cpu_dataset.variable_dict:
-            assert same_device(cpu_dataset[k].device, torch.device("cpu", 0))
-    else:
-        pass
+    cpu_dataset = cuda_dataset.to(dataset.device)
+    assert same_device(cpu_dataset.device, dataset.device)
+    for k in cpu_dataset.variable_dict:
+        assert same_device(cpu_dataset[k].device, dataset.device)
+
+@needs_cuda
+def test_cpu_cuda(mock_dataset):
+    CPU = torch.device('cpu', 0)
+    CUDA = torch.device('cuda', 0)
+    
+    dataset = mock_dataset()
+
+    # cpu -> cpu copy
+    cpu_dataset = dataset.cpu()
+    assert same_device(cpu_dataset.device, CPU)
+
+    # cpu -> cuda copy
+    cuda_dataset = dataset.cuda(CUDA)
+    assert same_device(cuda_dataset.device, CUDA)
+
+    # cuda -> cuda copy
+    another_cuda_dataset = cuda_dataset.cuda(CUDA)
+    assert same_device(another_cuda_dataset.device, CUDA) 
+
+    # cuda -> cpu copy
+    another_cpu_dataset = cuda_dataset.cpu()
+    assert same_device(another_cpu_dataset.device, CPU)
+

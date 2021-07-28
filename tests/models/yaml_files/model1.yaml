@@ -6,12 +6,12 @@ device:
 plates: {}
 nodes:
   a:
-    type: CategoricalNodeWithContinuousParents
+    type: CategoricalNodeWithDirichletPrior
     domain: ['low', 'high']
     parents: []
     plates: []
   b:
-    type: NormalNodeWithContinuousParents
+    type: ContinuousNodeWithNormalDistribution
     parents: []
     plates: []
   c:
@@ -19,11 +19,11 @@ nodes:
     parents: ['a']
     plates: []
   d:
-    type: NormalNodeWithContinuousParents
-    parents: ['c', 'b']
+    type: ConditionalLinearGaussianNode
+    parents: ['b']
     plates: []
   e:
-    type: CategoricalNodeWithContinuousParents
+    type: GeneralizedLinearNode
     domain: ['yes', 'no']
     parents: ['c', 'd']
     plates: []
