@@ -6,26 +6,10 @@ from pearl.data import BayesianNetworkDataset, VariableData
 
 
 @pytest.fixture
-def model_2_dataset():
-    N = 1000
-    a = torch.distributions.Categorical(probs=torch.tensor([0.3, 0.7])).sample((N,))
-    variable_dict = {
-        "a": VariableData(
-            NodeValueType.CATEGORICAL,
-            a.float(),
-            ["low", "high"],
-        )
-    }
-    return BayesianNetworkDataset(variable_dict)
-
-
-@pytest.fixture
 def model_1_dataset():
     N = 1000
     a = (
-        torch.distributions.Categorical(
-            probs=torch.softmax(torch.tensor([0.0, 1.0]), dim=-1)
-        )
+        torch.distributions.Categorical(probs=torch.tensor([0.25, 0.75]))
         .sample((N,))
         .float()
     )

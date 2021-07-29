@@ -189,10 +189,7 @@ class Node:
         kwargs["parents"] = [
             bayesnet.get_node_object(p) for p in yaml_encoding["parents"]
         ]
-        if "device" in yaml_encoding:
-            kwargs["device"] = torch.device(
-                yaml_encoding["device"]["type"], yaml_encoding["device"]["index"]
-            )
+        kwargs["device"] = bayesnet.device
         if "observed" in yaml_encoding:
             kwargs["observed"] = yaml_encoding["observed"]
         return kwargs
