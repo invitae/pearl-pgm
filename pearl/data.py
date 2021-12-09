@@ -347,6 +347,6 @@ class BayesianNetworkDataset(Dataset):
             tensors of the copied ``BayesianNetworkDataset`` object.
         """
 
-        if not device.type == 'cuda':
+        if not device.type == "cuda":
             raise ValueError(f"did not receive cuda device as input: {device}")
         return self.to(device)

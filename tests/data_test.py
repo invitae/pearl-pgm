@@ -290,11 +290,12 @@ def test_device_change_support(mock_dataset):
     for k in cpu_dataset.variable_dict:
         assert same_device(cpu_dataset[k].device, dataset.device)
 
+
 @needs_cuda
 def test_cpu_cuda(mock_dataset):
-    CPU = torch.device('cpu', 0)
-    CUDA = torch.device('cuda', 0)
-    
+    CPU = torch.device("cpu", 0)
+    CUDA = torch.device("cuda", 0)
+
     dataset = mock_dataset()
 
     # cpu -> cpu copy
@@ -307,9 +308,8 @@ def test_cpu_cuda(mock_dataset):
 
     # cuda -> cuda copy
     another_cuda_dataset = cuda_dataset.cuda(CUDA)
-    assert same_device(another_cuda_dataset.device, CUDA) 
+    assert same_device(another_cuda_dataset.device, CUDA)
 
     # cuda -> cpu copy
     another_cpu_dataset = cuda_dataset.cpu()
     assert same_device(another_cpu_dataset.device, CPU)
-
