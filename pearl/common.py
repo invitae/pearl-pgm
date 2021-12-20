@@ -32,6 +32,11 @@ class NodeValueType(IntEnum):
     CONTINUOUS = 1
 
 
+class QueryType(Enum):
+    CONJUNCTIVE = 0
+    DISJUNCTIVE = 1
+
+
 def same_device(device1, device2) -> bool:  # pragma: no cover
     if device1.type == device2.type == "cpu":
         return True

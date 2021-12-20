@@ -1,3 +1,4 @@
+import pathlib
 from unittest.mock import Mock
 
 import pytest
@@ -5,12 +6,14 @@ import torch
 import yaml
 from pyro import poutine
 
-from pearl.bayesnet import BayesianNetwork, VariableData
+from pearl.bayesnet import BayesianNetwork, VariableData, from_yaml
 from pearl.common import NodeValueType, same_device
 from pearl.data import BayesianNetworkDataset
 from pearl.nodes.categorical import CategoricalNodeWithDirichletPrior
 from pearl.nodes.continuous import ContinuousNodeWithNormalDistribution
 from tests.markers import needs_cuda
+
+YAMLS_PATH = pathlib.Path(__file__).parent.joinpath("models", "yaml_files")
 
 # test Bayesian network
 #          +-----+
@@ -450,10 +453,11 @@ def test_device_change_support(mock_bn):
     for node_object in cpu_mock_bn.get_node_dict().values():
         assert same_device(node_object.device, mock_bn.device)
 
+
 @needs_cuda
 def test_cpu_cuda(mock_bn):
-    CPU = torch.device('cpu', 0)
-    CUDA = torch.device('cuda', 0)
+    CPU = torch.device("cpu", 0)
+    CUDA = torch.device("cuda", 0)
 
     # cpu -> cpu copy
     cpu_mock_bn = mock_bn.cpu()
@@ -478,3 +482,140 @@ def test_cpu_cuda(mock_bn):
     assert same_device(another_cpu_mock_bn.device, CPU)
     for node_object in another_cpu_mock_bn.get_node_dict().values():
         assert same_device(node_object.device, CPU)
+
+
+@pytest.fixture
+def model_2():
+    yaml_file = YAMLS_PATH.joinpath("model2.yaml").resolve()
+    model = from_yaml(str(yaml_file))
+    return model
+
+
+@pytest.mark.parametrize(
+    "evidence_string, evidence_dict",
+    [
+        ("", {}),
+        ("r=true", {"r": 0}),
+        ("r = true", {"r": 0}),
+        (" r = true, ", {"r": 0}),
+        ("r=true, a=false, c=0.", {"r": 0, "a": 1, "c": 0.0}),
+        ("a=true", {"a": 0}),
+    ],
+)
+def test_parse_evidence(model_2, evidence_string, evidence_dict):
+    assert model_2.parse_evidence(evidence_string) == evidence_dict
+
+
+@pytest.mark.parametrize(
+    "evidence_string",
+    [
+        ("r=unknown"),
+        ("r,"),
+        ("r=true, r=false"),
+    ],
+)
+def test_parse_evidence_validates_evidence_string(model_2, evidence_string):
+    with pytest.raises(ValueError):
+        model_2.parse_evidence(evidence_string)
+
+
+@pytest.mark.parametrize(
+    "query_string, expected_result",
+    [
+        ("", ([], [], [])),
+        ("r=true", ([("r", 0)], [], [])),
+        ("r", ([], ["r"], [])),
+        ("r, a=true", ([("a", 0)], ["r"], [])),
+        ("r=true,a= false,b,c", ([("r", 0), ("a", 1)], ["b"], ["c"])),
+    ],
+)
+def test_parse_query(model_2, query_string, expected_result):
+    assert model_2.parse_query(query_string) == expected_result
+
+
+@pytest.mark.parametrize("query_string", [("c=1.0")])
+def test_parse_query_validates_query_string(model_2, query_string):
+    with pytest.raises(Exception):
+        model_2.parse_query(query_string)
+
+
+@pytest.mark.parametrize(
+    "query, evidence, expected_keys",
+    [
+        ("r", "", {(0,), (1,)}),
+        ("r, a=true", "", {(0, 0), (0, 1)}),
+        ("r", "a=true", {(0,), (1,)}),
+        ("r", "a=true, c=-10.", {(0,), (1,)}),
+    ],
+)
+def test_conditional_conjunctive_query_without_continuous_variables(
+    model_2,
+    query,
+    evidence,
+    expected_keys,
+):
+    result_dict = model_2.conditional_conjunctive_query(query, evidence, 10 ** 5)
+    assert set(result_dict.keys()) == expected_keys
+    assert all(isinstance(v, float) for v in result_dict.values())
+
+
+@pytest.mark.parametrize(
+    "query_string,evidence_string,expected_keys,num_continuous",
+    [
+        ("r=true,c", "", {(0,)}, 1),
+        ("r=true,c,d", "", {(0,)}, 2),
+        ("r=true,a,c", "", {(0, 0), (0, 1)}, 1),
+        ("r=true,c", "a=true", {(0,)}, 1),
+        ("r,c", "a=true", {(0,), (1,)}, 1),
+    ],
+)
+def test_conditional_conjunctive_query_with_continuous_variables(
+    model_2, query_string, evidence_string, expected_keys, num_continuous
+):
+    result_dict = model_2.conditional_conjunctive_query(
+        query_string, evidence_string, 10 ** 5
+    )
+    assert set(result_dict.keys()) == expected_keys
+    assert all([v.ndim == 2 for v in result_dict.values()])
+    assert all([v.size(1) == num_continuous for v in result_dict.values()])
+
+
+@pytest.mark.parametrize(
+    "query_string",
+    [
+        ("r=true,r=false"),
+        ("r=true,r"),
+        ("r=true,a,b=true,a"),
+        ("r=true,c,a=true,c"),
+    ],
+)
+def test_conditional_conjunctive_query_validates_parsed_query(model_2, query_string):
+    with pytest.raises(ValueError):
+        model_2.conditional_conjunctive_query(query_string, "", 10 ** 3)
+
+
+@pytest.mark.parametrize(
+    "query_string, evidence_string",
+    [
+        ("r=true", "a=true"),
+        ("r=true,r=false", "a=true"),
+    ],
+)
+def test_disjunctive_query(model_2, query_string, evidence_string):
+    computed_probability = model_2.conditional_disjunctive_query(
+        query_string, evidence_string, 10 ** 5
+    )
+    assert isinstance(computed_probability, float)
+
+
+@pytest.mark.parametrize(
+    "query_string",
+    [
+        ("r=true,a"),
+        ("r=true,c"),
+        ("r=true,r"),
+    ],
+)
+def test_disjunctive_query_validates_query_string(model_2, query_string):
+    with pytest.raises(ValueError):
+        model_2.conditional_disjunctive_query(query_string, "", 10 ** 3)

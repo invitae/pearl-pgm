@@ -1,0 +1,67 @@
+# test graphical model2
+encodingVersion: v1.0
+name: model2
+device:
+  type: cpu
+  index: 0
+plates: {}
+nodes:
+  r:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['true', 'false']
+    parents: []
+    plates: []
+    prior_params:
+      alpha:
+        - 100
+        - 10
+  a:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['true', 'false']
+    parents: ['r']
+    plates: []
+    prior_params:
+      alpha:
+        - - 100
+          - 10
+        - - 10
+          - 100
+  b:
+    type: CategoricalNodeWithDirichletPrior
+    domain: ['true', 'false']
+    parents: ['r']
+    plates: []
+    prior_params:
+      alpha:
+        - - 10
+          - 100
+        - - 100
+          - 10
+  c:
+    type: ContinuousNodeWithNormalDistribution
+    parents: ['r']
+    plates: []
+    prior_params:
+      mean_mean:
+        - -10.0
+        - 10.0
+      mean_scale:
+        - 1.0
+        - 1.0
+      scale_scale:
+        - 1.0
+        - 1.0
+  d:
+    type: ContinuousNodeWithNormalDistribution
+    parents: ['r']
+    plates: []
+    prior_params:
+      mean_mean:
+        - -10.0
+        - 10.0
+      mean_scale:
+        - 1.0
+        - 1.0
+      scale_scale:
+        - 1.0
+        - 1.0

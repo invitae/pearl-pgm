@@ -1,9 +1,10 @@
 import copy
 import functools
+import itertools
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple, Type
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Type, Union
 
 import networkx as nx
 import pyro
@@ -12,7 +13,14 @@ import torch
 import yaml
 from pyro.infer import SVI, Trace_ELBO, config_enumerate, infer_discrete
 
-from pearl.common import NodeValueType, Plate, SamplingMode, get_logger, same_device
+from pearl.common import (
+    NodeValueType,
+    Plate,
+    QueryType,
+    SamplingMode,
+    get_logger,
+    same_device,
+)
 from pearl.data import BayesianNetworkDataset, VariableData
 from pearl.hugin import hugin_potential_string
 from pearl.nodes.bayesnetnode import Node
@@ -387,6 +395,289 @@ class BayesianNetwork:
 
         return (samples, MAP_assignment, assignment_distribution)
 
+    def conditional_query(
+        self, query: str, evidence: str, query_type: QueryType, num_samples: int
+    ) -> Dict[str, Union[float, torch.Tensor]]:
+        """
+        Compute the conditional probability P(query|evidence).
+
+        The ``evidence`` is an assignment of values to some random
+        variables.
+
+        The ``query`` can either be a joint assignment to a set of
+        random variables (i.e., conjunctive) or be a disjunction of
+        variable assignments.  The distinction is made by
+        ``query_type`` argument.
+
+        :param query: string containing probabilistic query
+        :param evidence: string containing evidence for the
+            probabilistic query
+        :param query_type: type of the query (conjunctive vs
+            disjunctive)
+        :param num_samples: number of samples to be used for
+            estimating the conditional probability
+
+        :return: A dictionary whose keys are variable assignments to
+                 discrete variables in the query.  The values are
+                 either estimated conditional probabilities or
+                 tensors.  When the query does not contain continuous
+                 random variables, the values are conditional
+                 probabilities of the variable assignments to the
+                 query variables.  When the query contains continuous
+                 random variables, the values are tensors containing
+                 the sampled values of continuous random variables
+                 from the conditional distribution.
+        """
+
+        # check that there are no plates
+        if self.plate_dict:
+            raise Exception(
+                f"Conditional queries for plated graphical models are not supported: {self.plate_dict}"
+            )
+
+        # parse evidence
+        evidence_dict = self.parse_evidence(evidence)
+
+        # parse query
+        (
+            q_constraints,
+            q_unconstrained_discrete_vars,
+            q_unconstrained_continuous_vars,
+        ) = self.parse_query(query)
+        q_constraints_vars = [var for (var, _) in q_constraints]
+        q_constraints_vals = [val for (_, val) in q_constraints]
+
+        # validate query
+        if query_type == QueryType.DISJUNCTIVE:
+            if q_unconstrained_discrete_vars or q_unconstrained_continuous_vars:
+                raise ValueError(
+                    f"conditional disjunctive query with unconstrained variables: {query}"
+                )
+        else:
+            # each discrete variable should have a single constraint
+            if len(set(q_constraints_vars)) != len(q_constraints_vars):
+                raise ValueError(f"some variables have multiple constraints in {query}")
+
+        # constrained and unconstrained variables should be disjoint
+        if set(q_constraints_vars) & set(q_unconstrained_discrete_vars):
+            raise ValueError(
+                f"some variables are both constrained and unconstrained in {query}"
+            )
+        # unconstrained variables should not be repeated
+        if (
+            len(set(q_unconstrained_discrete_vars))
+            != len(q_unconstrained_discrete_vars)
+        ) or (
+            len(set(q_unconstrained_continuous_vars))
+            != len(q_unconstrained_continuous_vars)
+        ):
+            raise ValueError(f"some unconstrained variables are repeated in {query}")
+
+        # collect the domains of unconstrained discrete variables
+        q_unconstrained_discrete_var_domains = []
+        for var in q_unconstrained_discrete_vars:
+            node_object = self.get_node_object(var)
+            q_unconstrained_discrete_var_domains.append(range(len(node_object.domain)))
+
+        # ensure guide parameters are set
+        for node_object in self.get_node_dict().values():
+            node_object.sample_guide_cpd()
+
+        # create BayesianNetworkDataset containing a single row using the evidence
+        variable_dict = dict()
+        for k, node_object in self.get_node_dict().items():
+            if k in evidence_dict:
+                dataset_value = torch.tensor(
+                    [evidence_dict[k]], device=self.device
+                ).float()
+            else:
+                dataset_value = torch.tensor([0.0], device=self.device)
+            if node_object.value_type() == NodeValueType.CATEGORICAL:
+                variable_dict[k] = VariableData(
+                    node_object.value_type(), dataset_value, node_object.domain
+                )
+            else:
+                variable_dict[k] = VariableData(
+                    node_object.value_type(), dataset_value, None
+                )
+        dataset = BayesianNetworkDataset(variable_dict)
+
+        # temporarily mark evidence variables as observed and the rest as unobserved
+        old_observed_state = dict()
+        for k, node_object in self.get_node_dict().items():
+            old_observed_state[k] = node_object.observed
+            if k not in evidence_dict:
+                node_object.observed = False
+            else:
+                node_object.observed = True
+
+        # generate predictive samples
+        samples, _, _ = self.predict(
+            dataset=dataset,
+            target_variables=q_constraints_vars
+            + q_unconstrained_discrete_vars
+            + q_unconstrained_continuous_vars,
+            num_samples=num_samples,
+        )
+
+        # undo changes to the variables
+        for k, node_object in self.get_node_dict().items():
+            node_object.observed = old_observed_state[k]
+
+        # process the samples to compute query probabilities
+        result_dict = dict()
+        if q_unconstrained_discrete_vars:
+            for vals in itertools.product(*q_unconstrained_discrete_var_domains):
+                entry = tuple(q_constraints_vals) + vals
+                result_dict[entry] = self._conditional_query_helper(
+                    query_type,
+                    q_constraints_vars + q_unconstrained_discrete_vars,
+                    q_constraints_vals + list(vals),
+                    q_unconstrained_continuous_vars,
+                    samples,
+                )
+        else:
+            entry = tuple(q_constraints_vals)
+            result_dict[entry] = self._conditional_query_helper(
+                query_type,
+                q_constraints_vars,
+                q_constraints_vals,
+                q_unconstrained_continuous_vars,
+                samples,
+            )
+        return result_dict
+
+    def conditional_conjunctive_query(
+        self, query: str, evidence: str, num_samples: int
+    ) -> Dict[str, Union[float, torch.Tensor]]:
+        """
+        Compute P(query|evidence) where ``query`` represents a
+        conjunction of events.  This method is supported only by
+        BayesianNetworks without plates.
+
+        :param query: String containing the conjunctive query.  It has
+            the form of a comma separated list of conjuncts.  Each
+            conjunct is either an un-constrained random variable, or
+            an equality constrained categorical random variable.
+
+            Examples:
+
+                - "EV0016 = True"
+
+                - "EV0016 = True, EV0014, Dma.Score"
+
+            Spaces are allowed around the comma separator and the
+            equality operator.
+
+        :param evidence: a string containing the evidence on the
+            random variables.  It has the form of a comma separated
+            list of equality constraints on random variables.
+
+            Examples:
+
+                - "Interpretation = pathogenic"
+
+                - "Interpretation = pathogenic, Dma.Score = 0.7"
+
+        :return: A dictionary that maps from categorical query
+                 variable assignments to probabilities or tensors.
+                 Values are probabilities when the query does not
+                 contain continuous random variables.  Values are
+                 tensors of sampled values of the continuous random
+                 variables, when they are present in the query.
+        """
+        return self.conditional_query(
+            query, evidence, QueryType.CONJUNCTIVE, num_samples
+        )
+
+    def conditional_disjunctive_query(
+        self, query: str, evidence: str, num_samples: int
+    ) -> float:
+        """
+        Compute P(query|evidence) where ``query`` represents a
+        disjunction of events.  This method is supported only by
+        BayesianNetworks without plates.
+
+        :param query: String containing the conjunctive query.  It has
+            the form of a comma separated list of disjuncts.  Each
+            disjunct is an equality constrained categorical random
+            variable.
+
+            Examples:
+
+                - "EV0016 = True"
+
+                - "EV0016 = True, EV0014=False"
+
+            Spaces are allowed around the comma separator and the
+            equality operator.
+
+        :param evidence: a string containing the evidence on the
+            random variables.  It has the form of a comma separated
+            list of equality constraints on random variables.
+
+            Examples:
+
+                - "Interpretation = pathogenic"
+
+                - "Interpretation = pathogenic, Dma.Score = 0.7"
+
+        :return: The conditional probability of the query.
+        """
+        result_dict = self.conditional_query(
+            query, evidence, QueryType.DISJUNCTIVE, num_samples
+        )
+        if len(result_dict) > 1:
+            raise Exception(
+                f"result dictionary of disjunctive query has more than one entry: {result_dict}"
+            )
+        return float(next(iter(result_dict.values())))
+
+    def _conditional_query_helper(
+        self,
+        query_type: QueryType,
+        categorical_variables: List[str],
+        values: List[int],
+        continuous_variables: List[str],
+        samples: dict,
+    ) -> Union[float, torch.Tensor]:
+        """
+        Helper function to compute conditional query probabilities
+        from samples.  For the given assignment of ``values`` to
+        (discrete) ``categorical_variables``, the helper function
+        returns either the fraction of samples consistent with the
+        assignment or returns a tensor with the consistent samples.
+        The choice is made based on whether the query includes
+        continuous random variables.  If there are no continuous
+        random variables, a fraction is returned as the estimate of
+        the conditional probability.  Otherwise the consistent samples
+        of the continuous random variables are returned in the tensor.
+
+        :param categorical_variables: list of categorical randomc
+            variables in the query
+        :param values: list of values of categorical variables
+        :param continuous_variables: list of continuous variables in
+            the query
+        :param samples: samples from the predictive distribution
+        """
+        num_samples = len(next(iter(samples.values())))
+        if query_type == QueryType.CONJUNCTIVE:
+            mask = torch.ones(num_samples).bool()
+            for k, v in zip(categorical_variables, values):
+                mask = mask & torch.eq(samples[k].squeeze(), v)
+        else:
+            mask = torch.zeros(num_samples).bool()
+            for k, v in zip(categorical_variables, values):
+                mask = mask | torch.eq(samples[k].squeeze(), v)
+
+        if continuous_variables:
+            return torch.stack(
+                [samples[k].squeeze()[mask] for k in continuous_variables],
+                dim=-1,
+            )
+        else:
+            return float(torch.sum(mask)) / num_samples
+
     def set_observed_values(
         self, dataset: BayesianNetworkDataset, dims_to_prepend: Tuple[int] = ()
     ) -> None:
@@ -656,7 +947,7 @@ class BayesianNetwork:
         copied to CPU memory.  If the object is already using CPU
         memory a shallow copy is returned.
         """
-        return self.to(torch.device('cpu', 0))
+        return self.to(torch.device("cpu", 0))
 
     def cuda(self, device: torch.device) -> "BayesianNetwork":
         """
@@ -667,9 +958,107 @@ class BayesianNetwork:
         :param device: torch cuda device to be used to store the
             tensors of the copied ``BayesianNetwork`` object.
         """
-        if not device.type == 'cuda':
+        if not device.type == "cuda":
             raise ValueError(f"did not receive cuda device as input: {device}")
         return self.to(device)
+
+    def parse_evidence(self, evidence: str) -> Dict:
+        """
+        Parse a string with evidence on the random variables of the
+        BayesianNetwork.
+
+        :param evidence: string containing the evidence on random
+            variables.  The string has the form of a comma separated
+            list of equality constraints.  The evidence string should
+            be well-formed and use values from the domain of the
+            random variable.
+
+            Examples:
+
+                - "EV0016=True"
+
+                - "EV0016=True,Interpretation=Pathogenic"
+
+                - "Interpretation=Pathogenic, Dma.Score=1.0"
+
+        :return: A dictionary mapping variables in the evidence to
+                 their values.
+        """
+        evidence_dict = dict()
+        for e in evidence.replace(" ", "").split(","):
+            if not e:
+                continue
+
+            variable, value = e.split("=")
+            if variable in evidence_dict:
+                raise ValueError(
+                    f"multiple equality constraints on {variable} in {evidence}"
+                )
+            node_object = self.get_node_object(variable)
+            if node_object.value_type() == NodeValueType.CATEGORICAL:
+                evidence_dict[variable] = node_object.domain.index(value)
+            else:
+                evidence_dict[variable] = float(value)
+
+        return evidence_dict
+
+    def parse_query(self, query: str) -> List:
+        """
+        Parse a string containing query on the random variables of the
+        BayesianNetwork.
+
+        :param query: string containing the query on the random
+            variables.  The string has the form of a comma separated
+            list of parts.  Each part is either an unconstrained or
+            equality constrained random variable.  The query string
+            should be well-formed.  Equality constraints are allowed
+            only for categorical random variables.
+
+            Examples:
+
+                - "Interpretation"
+
+                - "Interpretation=Pathogenic"
+
+                - "Interpretation=Pathogenic, EV0016=True"
+
+                - "Interpretation=Pathogenic, EV0016"
+
+                - "Interpretation=Pathogenic, EV0016, Dma.Score"
+
+        :return: A tuple of three lists.
+
+                - list of equality constraints as (variable, value)
+                  pairs
+
+                - list of unconstrained categorical variables
+
+                - lisf of unconstrained continuous variables
+        """
+        constraints = []
+        unconstrained_discrete_variables = []
+        unconstrained_continuous_variables = []
+        for q in query.replace(" ", "").split(","):
+            if not q:
+                continue
+            q_parts = q.split("=")
+            if len(q_parts) == 1:
+                node_object = self.get_node_object(q)
+                if node_object.value_type() == NodeValueType.CATEGORICAL:
+                    unconstrained_discrete_variables.append(q)
+                else:
+                    unconstrained_continuous_variables.append(q)
+            elif len(q_parts) == 2:
+                node_object = self.get_node_object(q_parts[0])
+                constraints.append((q_parts[0], node_object.domain.index(q_parts[1])))
+            else:
+                raise ValueError(f"Invalid query {q} in {query}")
+        return (
+            constraints,
+            unconstrained_discrete_variables,
+            unconstrained_continuous_variables,
+        )
+
 
 def to_yaml(bn: BayesianNetwork, file: str) -> None:
     with open(file, "w") as fp:

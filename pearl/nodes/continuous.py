@@ -37,6 +37,7 @@ class ContinuousNodeWithNormalDistribution(NodeWithCategoricalParents):
             device=device,
             prior_params=prior_params,
         )
+        self.guide_MAP_cpd = None
 
     def get_default_prior_params(self):
         # The tuple value (1,) catted to the end of parent_domain_sizes ensures
